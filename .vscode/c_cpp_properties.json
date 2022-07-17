@@ -4,7 +4,7 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-                "~/edk2/MdePkg/Include"
+                "${HOME}/edk2/MdePkg/Include/**"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/clang",

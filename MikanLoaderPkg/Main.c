@@ -1,152 +1,207 @@
 #include<Uefi.h>
 #include<Library/UefiLib.h>
+#include<Library/UefiBootServicesTableLib.h>
+#include<Library/PrintLib.h>
+#include<Protocol/LoadedImage.h>
+#include<Protocol/SimpleFileSystem.h>
+#include<Protocol/DiskIo2.h>
+#include<Protocol/BlockIo.h>
 
+//メモリーマップ構造体の定義
+struct MemoryMap {
+    UINTN buffer_size;
+    VOID* buffer;//voidポインタで指すのは後々変更があるのだろうか？
+    UINTN map_size;
+    UINTN map_key;
+    UINTN descriptor_size;
+    UINT32 descriptor_version;
+};
+//typedef struct MemoryMap MemoryMap　としたほうがいいだろうか？
+
+//プロトタイプ宣言
+//メイン関数をある程度書かないとどういう呼び出し方をして、関数内部の処理の内容が想像しにくいのでメインを先に書く。
+EFI_STATUS GetMemoryMap(struct MemoryMap *map);//メモリマップを取得して、引数に渡す。
+EFI_STATUS OpenRootDir(EFI_HANDLE image_handle, EFI_FILE_PROTOCOL **root);//ルートディレクトリを開く。
+EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL *file);//メモリーマップをファイルに書き込む。
+const CHAR16* GetMemoryTypeUnicode(EFI_MEMORY_TYPE type);//メモリディスクリプタのタイプ値をタイプ名に変換する。
+//エントリポイント
 EFI_STATUS EFIAPI UefiMain(
-    EFI_HANDLE ImageHandle,
-    EFI_SYSTEM_TABLE *SystemTabel
-    )
+    EFI_HANDLE image_handle,
+    EFI_SYSTEM_TABLE *system_table
+)
 {
     Print(L"Hello,Mikan world!\n");
+    //メモリマップを取得する。
+    CHAR8 memmap_buff[4096 * 4];
+    struct MemoryMap memmap = {sizeof(memmap_buff),memmap_buff,0,0,0,0};
+    //プロトタイプ宣言の通り。
+    //memmapのアドレスを引数に渡して、GetMemoryMapに渡す。
+    GetMemoryMap(&memmap);
+    //ルートディレクトリを開く。
+    EFI_FILE_PROTOCOL *root_dir;//EFI_FILE_PROTOCOL構造体へのポインタ。構造体の詳細はspec.p.513にある。下にメモをする。
+    OpenRootDir(image_handle,&root_dir);//はじめてImageHandle(エントリポイントの第一引数)を使った。
+    //ここから調べる量を減らす。関数一つあたりに調べる量が多すぎるので、そういうものと思い込むラインを緩める。
+    //そういうものというものに対しては明確に書く。（認識やそういうものとかそういう書き方をする。）
+    //ルートディレクトリが開けた。ここからファイルを作って書き込んでいく。
+    EFI_FILE_PROTOCOL *memmap_file;//EFI_FILE_PROTOCOLを使ってファイル構造体を宣言するという認識。
+    root_dir->Open(
+        root_dir,&memmap_file,L"\\memmap",
+        EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_CREATE,0
+    );//これで書き込みモードでルートディレクトリにmemmapが開く。
+    //書き込むデータはすでに取得済み、書き込み先も開いた。->早速書き込んでいく。
+    SaveMemoryMap(&memmap, memmap_file);
+    //いつも通り、ファイル構造体は最後は閉じる。
+    memmap_file->Close(memmap_file);
+    //終了をしたことを画面に出力する。
+    Print(L"All done\n");
     while(1);
     return EFI_SUCCESS;
 }
 
-/*以下メモ
-情報源はUEFIの仕様書。リンクは以下の通り。以降、仕様書と略す。
-https://uefi.org/sites/default/files/resources/UEFI_Spec_2_9_2021_03_18.pdf 
-また、以降仕様書のページ数とpdfのページ数を書くが、それぞれspec.p.とpdf.p.と略すことにする。
-英語になれるためにちょっとだけ英語で書く。
+//プロトタイプの中身を書いていく。
+//メモリパップを取得する関数を定義して、その中でgBS->GetMemoryMapを呼び出す。
+EFI_STATUS GetMemoryMap(struct MemoryMap *map){
+    //* mapの配列の中身は、UefiMainで定めた通り。
+    //     = {sizeof(memmap_buff),memmap_buff,0,0,0,0};
+    //大きい配列なので確保できているか確認。動的確保と同じやり方という認識だが大丈夫か？
+    if(map->buffer == NULL) {
+        return EFI_BUFFER_TOO_SMALL;
+    }
+    //if文でリターンされなければ、配列は確保されている。以下でメモリマップを確保していく。
+    //map_sizeは入力時は書き込み用メモリ領域の大きさなので、buffer_size == sizeof(memmap_buff)を代入。
+    map->map_size = map->buffer_size;
+    //return文でgBS->MemoryMapを実行して、EFI_STATUSを返す。
+    return gBS->GetMemoryMap(
+        &map->map_size,/*入力時は書き込み用メモリ領域の大きさ、実行後は実際のメモリマップの大きさが入る*/
+        (EFI_MEMORY_DESCRIPTOR*)map->buffer,/*bufferはvoidポインタなのでEFI_MEMORY_DESCRIPTOR型のポインタにキャスト*/
+        &map->map_key,/*gBS->ExtitBootServices()を呼び出す時に使うらしい*/
+        &map->descriptor_size,/*メモリディスクリプタの大きさが返ってくる*/
+        &map->descriptor_version/*これはみかん本では使わないらしい*/
+    );
+}
+//ルートディレクトリを開く。
+//引数はエントリポイントで受け取ったimage_handleと出力用にルートディレクトリを返す**root
+EFI_STATUS OpenRootDir(EFI_HANDLE image_handle,EFI_FILE_PROTOCOL **root){
+    EFI_LOADED_IMAGE_PROTOCOL *loaded_image;//spec.p.47,288。構造体の定義はspec.p.288
+    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *fs;//spec.p.510に構造体の定義がある。
+    //処理の流れは、ブートサービスからOpenProtocolを使って連鎖的に開いていく。
+    //まず、すでに開いたハンドル image_handleを使ってloaded_imageを開く。
+    gBS->OpenProtocol(
+        image_handle,
+        &gEfiLoadedImageProtocolGuid,/*Loader.infに追加したものに近いが何か関係があるのだろうか*/
+        (VOID**)&loaded_image,/*ここが重要。OpenPrtocolの出力に相当する。*/
+        image_handle,/*AgentHandleとは一体なんだろう。肝ではなさそうなので飛ばす*/
+        NULL,/*ControllerHandle、ここはAgentHandleがUEFI Dirver ModelじゃないならNULLにするらしい。よくわからん*/
+        EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL/*開き方の指定*/
+    );
+    //loaded_imageが開いた？と思うのでfsを開く。
+    gBS->OpenProtocol(
+        loaded_image->DeviceHandle,/*イメージの場所を表す。*/
+        &gEfiSimpleFileSystemProtocolGuid,
+        (VOID**)&fs,
+        image_handle,
+        NULL,
+        EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL
+    );
+    //これでfsが使えるようになったのでルートディレクトリを開く。
+    fs->OpenVolume(fs,root);
+    return EFI_SUCCESS;
+    //この関数SUCCESSしか返さないが大丈夫だろうか？OpenProtocolが必ず成功すると定められているならいいのだが
+}
+//メモリーマップを保存していく。
+EFI_STATUS SaveMemoryMap(struct MemoryMap *map, EFI_FILE_PROTOCOL *file) {
+    CHAR8 buf[256];
+    UINTN len;
+    //csvファイルの先頭行を見出しとして使う。
+    CHAR8* header = "Index, Type, Type(name), PhysicalStart, NumberOfPages, Attribute\n";
+    //文字列の長さを計算。
+    len = AsciiStrLen(header);
+    //書き込む。
+    file->Write(file,&len,header);
+    //画面に出力。
+    Print(L"map->buffer = %08lx, map->map_size = %08lx\n",map->buffer,map->map_size);
+    //イテレータを宣言。
+    EFI_PHYSICAL_ADDRESS iter;
+    int i;
+    for(iter = (EFI_PHYSICAL_ADDRESS)map->buffer,i=0;/*iterに配列の先頭アドレスを代入、*/
+        iter < (EFI_PHYSICAL_ADDRESS)map->buffer + map->map_size;/*iterがマップサイズの範囲を越えなければ繰り返し。*/
+        iter += map->descriptor_size, i++) {/*メモリディスクリプタの大きさだけ移動する。*/
+        //メモリディスクリプタ型のポインタに再度キャストする。
+        EFI_MEMORY_DESCRIPTOR *desc = (EFI_MEMORY_DESCRIPTOR*)iter;
+        len = AsciiSPrint(/*write関数の説明文中に返り値が文字列のバイト数になるらしい。*/
+            buf,sizeof(buf),/*AsciiPrintは引数に指定した配列（buf)にフォーマットで指定した形に成形された文字列が入る。*/
+            "%u, %x, %-ls, %08lx, %lx, %lx\n",/*フォーマット*/
+            i, desc->Type, GetMemoryTypeUnicode(desc->Type),/*GetMemoryTypeUnicodeはこのファイル内で定義*/
+            desc->PhysicalStart, desc->NumberOfPages,
+            desc->Attribute & 0xffffflu
+        );//これでbufに文字列、lenに文字列のバイト数が格納される。
+        file->Write(file,&len,buf);
+    }
+    return EFI_SUCCESS;
+}
+//メモリディスクリプタのタイプ値とタイプ名の対応をとる。
+const CHAR16* GetMemoryTypeUnicode(EFI_MEMORY_TYPE type){
+    switch (type){
+        case EfiReservedMemoryType      : return L"EfiReservedMemoryType";
+        case EfiLoaderCode              : return L"EfiLoaderCode";
+        case EfiLoaderData              : return L"EfiLoaderData";
+        case EfiBootServicesCode        : return L"EfiBootServicesCode";
+        case EfiBootServicesData        : return L"EfiBootServicesData";
+        case EfiRuntimeServicesCode     : return L"EfiRuntimeServicesCode";
+        case EfiRuntimeServicesData     : return L"EfiRuntimeServicesData";
+        case EfiConventionalMemory      : return L"EfiConventionalMemory";
+        case EfiUnusableMemory          : return L"EfiUnusableMemory";
+        case EfiACPIReclaimMemory       : return L"EfiACPIReclaimMemory";
+        case EfiACPIMemoryNVS           : return L"EfiACPIMemoryNVS";
+        case EfiMemoryMappedIO          : return L"EfiMemoryMappedIO";
+        case EfiMemoryMappedIOPortSpace : return L"EfiMemoryMappedIOPortSpace";
+        case EfiPalCode                 : return L"EfiPalCode";
+        case EfiPersistentMemory        : return L"EfiPersistentMemory";
+        case EfiMaxMemoryType           : return L"EfiMaxMemoryType";
+        default                         : return L"InvalidMemoryType";
+    }
+}
+/*
+---
+みかん本 p.55~
+tag: osbook_day02b
+---
+edk2の仕様書（いろいろ種類があったけど）を見て、グローバル変数がどこで定義されるか探してみた。
+結果は、どのようにファイルが作成されて最終的に.efiができるかの概要は出てきたがどこでどのように定義されるかはわからなかった。
+より時間を書けて調べたら出てくるかもしれないが、1周目なのでここではもう「gで始まったらどこかで定義されたグローバル変数」と思っておこう。でないと進まない。
 
-・EFI_STATUS : 
-spec.p.20、pdf.p.95。表2-3より、
-データ型の一種でStatus code。型としてはUINTN。
+・EFI_FILE_PROTOCOL
+spec.p.513より引用。
 
-・EFIAPI :
-spec.p.19、pdf.p.94。2.3 Calling Conventions
-Calling Conventionsは呼び出し規約のこと。EFIAPIが仕様書ではじめて出てきたところの文章は以下のようになっている。
-以下仕様書より引用。
- In all cases, all pointers to UEFI functions are cast with the word EFIAPI. This allows the compiler for each architecture to supply the proper compiler keywords to achieve the needed calling conventions. 
+typedef struct _EFI_FILE_PROTOCOL {
+    UINT64  Revision;
+    EFI_FILE_OPEN Open;
+    EFI_FILE_CLOSE Close;
+    EFI_FILE_DELETE Delete;
+    EFI_FILE_READ Read;
+    EFI_FILE_WRITE Write;
+    EFI_FILE_GET_POSITION GetPosition;
+    EFI_FILE_SET_POSITION SetPosition;
+    EFI_FILE_GET_INFO GetInfo;
+    EFI_FILE_SET_INFO SetInfo;
+    EFI_FILE_OPEN_EX OpenEx;
+    EFI_FILE_READ_EX ReadEx;
+    EFI_FILE_WRITE_EX WriteEx;
+    EFI_FILE_FLUSH_EX FlushEx;
+} EFI_FILE_PROTOCOL;
 
-意味的には、「すべての、UEFI関数へのポインタは EFIAPIでキャストされる。これによって、各アーキテクチャのコンパイラは必要な呼び出し規約を実現するために適切なコンパイラキーワードを提供できる」という感じ。
-呼び出し規約は以前WinAPIを学習しているときに出てきた。関数を呼び出すときに引数などをスタック領域に積んでいく必要があるが、その時のルールを表していた。この文章的にはハードウェアの種類によって適切な積み方が違うからとりあえずC言語のコードではEFIAPIでキャストしておいて、内容は各コンパイラが環境に合わせておいてねという感じだろうか？費用対効果的にこれ以上調べる価値がなさそうなのでここまでにする。
-とりあえずEFIAPIを見たら、WinAPIの __stdcallの仲間だと思うことにする。
+構造体の中に関数ポインタを持つ構造体。
+例えば、EFI_FILE_OPEN Openの文。
+関数の型名はEFI_FILE_OPEN、これはspec.p.514に書かれている。
+プロトタイプ宣言は以下の通りになる。
 
-たまたま見つけたので以下もメモ。
-spec.p.21、pdf.p.96。表2-4より。
-EFIAPI : Define the calling convention for UEFI interfaces.
+typedef EFI_STATUS (EFIAPI *EFI_FILE_OPEN)(
+IN EFI_FILE_PROTOCOL *This,
+OUT EFI_FILE_PROTOCOL **NewHandle,
+IN CHAR16 *FileName,
+IN UINT64 OpenMode,
+IN UINT64 Attributes
+);
 
-・UefiMain :　Loader.infで定義したエントリポイント。
-
-・EFI_HANDLE :
-spec.p.20、pdf.p.95。表2-3より、引用。
-A collection of realated interfaces. Type VOID*.
-
-ちなみにVOIDは以下の通り。同様に引用。
-Undecleared type.
-
-多分、普通のc言語のvoid型と同じだと思われる。なので、EFI_HANDLEはいわゆるvoidポインタというやつだと推測される。
-
-EFI_SYSTEM_TABLE :
-spec.p.62、pdf.p.137。表2-11より。 EFI_SYSTEM_TABLEは
-Provide acsess to UEFI Boot Services, UEFI Runtime Services, consoles, firmware vendor infomation, and the system congigration tabeles.
-となっている。
-spec.p.93、pdf.p.168。 4.3. EFI System Table
-ここでは、具体的な内容、EFI_SYSTEM_TABLE構造体の中身について言及している。
-初期の段階であるのであまり踏み込んで調べないが、読んでいるとシステムで使われる様々なサービス、例えばコンソールやブートサービスなど、のハンドルやサービスに関する入出力のポインタ（ここは少しあいまい、誤りの可能性大）が集められているといった印象。
-書いた後で気づいたが、そのことは上記の引用文と言っていることはほどんど同じの気がする。なぜなら、Provide acsess to ~であるから。ブートサービスやランタイムサービス、コンソールなどへのアクセスを提供するという文言的には正しく見える。
-そのため、EFI_SYSTEM_TABLEで宣言された変数は、UEFIが提供するいろんなサービスへアクセスできるものだと考えて進める。
-（間違っていたら戻ってくる）
-
-・EFI_STATUS EFIAPI UefiMain( EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_table) : 
-なぜ2つの変数を引数として持っているのか？
-spec.p.24、pdf.p.99。図2-2の説明文に以下のことが書かれている。
-Figure 2-2 shows the stack after AddressOfEntryPoint in the image's PE32+ header has been called on supported 32-bit systems. All UEFI image entry points take two parameters. These are the image handle to the UEFI image, and a pointer to the EFI System Table.
-
-この図はあくまでIA-32の説明だが、文中にはすべてのアーキテクチャに共通することを述べている。
-すべての UEFI image entry pointsは2つのパラメータをとる、と書かれている。
-そして、それがimage handle to the UEFI image　と　a pointer to the EFI System Tableということである。
-
-同様のことが以下にも記述されている。
-spec.p.91、pdf.p.166。
-4.1. UEFI Image Entry Point
-    EFI_IMAGE_ENTRY_POINT
-        Summary
-            This is the main entry point for a UEFI image. This entry point is the same for UEFI applications and UEFI drivers.
-        
-        Prototype
-            typedef
-            EFI_STATUS
-            (EFIAPI *EFI_IMAGE_ENTRY_POINT)(
-                IN EFI_HANDLE ImageHandle,
-                IN EFI_SYSTEM_TABLE *SystemTable
-            );
-
-        Parameters
-            ImageHandle     The firmware allocated handle for the UEFI image. 
-            SystemTable     A pointer to the EFI System Table.
-
-つまり、UEFI application や　UEFI imageのエントリポイントはEFI_IMAGE_ENTRY_POINTでイメージハンドルとEFI System Tableへのポインタを引数として持つようにプロトタイプ宣言されているということだと思う。
-また推測であるが、プロトタイプ宣言で型名のない（具体的にエントリポイント名が決まっていないということ）エントリポイント関数に名前をつけるという操作をしている、といった認識。これは別のc言語の本、独習Cのp.299に書かれている。この本によればtypedefを使うと関数ポインタのように型名をを持たない型に対して名前を付けるととができる。書き方は以下の通り。
-
-typedef 関数の戻り値の型　(*適当な関数名)(適当な関数名の関数が持つ引数リスト)
-
-といったように書く。こうすることで適当な関数名といった型名を作ることができる。（具体的には関数ポインタを返り値として持つ関数の型名などに使える）
-これを今回の内容に当てはめると以下の通りになる。
-
-typedef EFI_STATUS (EFIAPI *EFI_IMAGE_ENTRY_POINT)(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable);
-こう書くことでEFI_IMAGE_ENTRY_POINTという型名をつけて使うことができる。
-なので、これも推測に過ぎないが、エントリポイントをLoader.infで定めるのはこういったようにエントリポイント名が関数名で決まっているのではなく、あくまで型名として決まっていて実体を定義していない（コンソールアプリケーションでは具体的にmain()、WinAPIではMinMain()であると決まっている）からではないかと思う。
-
-読み返すと結構滅茶苦茶な文章を書いているがなんとなく趣旨は書けているので良いものとする。
-以上がエントリポイントに関する認識である。間違っているところもあると思うが、とりあえず進めていく。
-
-・Print : 
-仕様書にPrintの説明がない。仕様書には一応Print文が使われているところはある。例えば以下のページ。
-spec.p.425、pdf.p.500。しかし、Printに関する説明はない。
-疑問に思って、このファイルのヘッダファイルのインクルードなしにコンパイルしたが、コンパイルに失敗した。
-しかし、上記のコードでは特にヘッダファイルなしに記述されている。コードのすべてが表示されているわけではないのかもしれないが不思議である。
-edk2のリポジトリを確認したら発見できた。場所は次。
-https://github.com/tianocore/edk2/blob/master/MdePkg/Include/Library/UefiLib.h
-上記URLにあるファイルの1089行目からにあった。定義は以下の通り。
-
-UINTN EFIAPI Print (IN CONST CHAR16 *Format, ... );
-
-ここでUINTNはデータ型の一種。spec.p.20、pdf.p.95。表2-3に以下の文面が書かれている。
-Unsigned value of native width. (4 bytes on suppoeted 32-bit processor instruction, 8 bytes on supported 64-bit processor instructions, 16 bytes on supported 128-bit processor instructions)
-
-native widht の意味のとり方があいまいだが、括弧書きでおおよその意味が取れると思う。ここでのnativeとは使用しているコンピュータのCPUのbit数によって変わるということを表しているという意味でそこまで深読みする必要はないと思う。
-単純に、私の環境だとCPUはx86_64アーキテクチャなので UINTNは8 bytes　の符号なしの値である。しかし、整数なのか実数なのか明記されていない。推測に過ぎないが整数だと思う。その理由は、 UINTN なので次の2つに分解できると思う。
-U - INT - N
-で内訳は、
-U   : Unsigned 
-INT : INTeger
-N   : Number (CPUのビット数に依存して変わる値の意。)
-という認識で読んでいる。
-
-・EFI_SUCCESS : 
-仕様書には説明はない。しかし大量に使用されている。文字通り処理が成功したときに返される。
-edk2のGithubリポジトリにあった。以下にURLを記載する。
-EFI_SUCCESS 自体のマクロは以下のURLであるが、マクロの定義がマクロを介している。
-書き方的には、　#define EFI_SUCCESS  RETURN_SUCCESS　といった状態。
-https://github.com/tianocore/edk2/blob/master/MdePkg/Include/Uefi/UefiBaseType.h
-RETURN_SUCCESS　のマクロ定義は以下のURL。値は 0 として定義している。
-https://github.com/tianocore/edk2/blob/master/MdePkg/Include/Base.h
-
-結論としては値は0。
-
-・疑問
-なぜUEFI仕様書の中に、edk2のヘッダファイルで定義されている関数やマクロが使用されているのだろうか？
-edk2のヘッダファイル内の関数やマクロは独自のものではなくある程度共通の記述によるものなのだろうか？
-これに回答するわけではないが、仕様書とedk2について少しだけ言及。
-仕様書はUEFIはこうあるべきという、UEFIの目指すべき将来像を厳密に詳細に書いたもの。
-edk2はあくまでもSDK、UEFIアプリを便利に作るためのツール。ライブラリを提供してくれるが、そのライブラリが従うルールは仕様書である。
-という感じ？なので使用する関数などがすべて厳密に書かれているのはedk2が提供するライブラリなのでそちらを見るといいかもしれない。
-しかし、仕様書の方が探しやすいので先に仕様書を見るのがいいと思う。実際、Print関数のヘッダファイルは簡単に見つかったので、関数の引数と返り値は簡単にわかる。しかし、探し方が単純に悪いだけだとは思うがPrint関数の実体（Print関数の処理内容が明記されている .cファイル）は現状見つかっていない。
-->書いている途中で思ったが、仕様書に関数について書いているのだろうか？基本的な枠組みが書かれているだけなのか？
-はっきりしないので今後作業を進めるうちにわかっていけたらと思う。
-疑問を疑問のままでおいておくのは良くないことだが今後調べないといけないことが多く出てくるはずなのでときに合わせて知ることができたらラッキー程度に思っておこうと思う。
-
-・ひとまず終了。
-Hello world　だけであったがかなり知識がないと読み解けない内容だった。
-とりあえず初めだったのである程度しっかり調べたが、進み具合によっては調整しなければならないと思った。
+すべてが関数ポインタではないと思うが、少なくとも関数ポインタを含む構造体であるという認識。
 */
