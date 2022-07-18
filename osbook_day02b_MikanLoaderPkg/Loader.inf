@@ -19,7 +19,6 @@
   UefiApplicationEntryPoint
 
 [Guids]
- gEfiFileInfoGuid
 
 [Protocols]
   gEfiLoadedImageProtocolGuid
