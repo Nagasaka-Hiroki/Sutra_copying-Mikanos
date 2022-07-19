@@ -1,20 +1,19 @@
-target = kernel.elf
-objs = main.o
+TARGET = kernel.elf
+OBJS = main.o
 
-cxxflags += -O2 -Wall -g --target=x86_64-elf --ffreestanding -mno-red-zon \
+CXXFLAGS += -O2 -Wall -g --target=x86_64-elf -ffreestanding -mno-red-zone \
 			-fno-exceptions -fno-rtti -std=c++17
+LDFLAGS  += --entry KernelMain -z norelro --image-base 0x100000 --static
 
-ldflags  += --entry KernelMain -z norelro --image-base 0x100000 --static
+.PHONY: all
+all: $(TARGET)
 
-.phony: all
-	all: $(target)
-
-.phony: clean
+.PHONY: clean
 clean:
 	rm -rf *.o
 
-kernel.elf: $(objs) Makefile
-	ld.lld $(ldflags) -o kernel.elf $(objs)
+kernel.elf: $(OBJS) Makefile
+	ld.lld $(LDFLAGS) -o kernel.elf $(OBJS)
 
 %.o: %.cpp Makefile
-	clang++ $(cppflags) $(cxxflags) -c $<
+	clang++ $(CPPFLAGS) $(CXXFLAGS) -c $<
