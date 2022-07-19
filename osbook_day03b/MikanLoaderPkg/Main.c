@@ -22,8 +22,8 @@ EFI_STATUS GetMemoryMap(struct MemoryMap *map);
 EFI_STATUS OpenRootDir(EFI_HANDLE image_handle, EFI_FILE_PROTOCOL **root);
 EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL *file);
 const CHAR16* GetMemoryTypeUnicode(EFI_MEMORY_TYPE type);
-EFI_STATUS OpenGOP(EFI_HANDLE image_handle,EFI_GRAPHICS_OUTPUT_PROTOCOL** gop);
-const CHAR16* GetPixelFormatUnicode(EFI_GRAPHICS_PIXEL_FORMAT fmt);
+EFI_STATUS OpenGOP(EFI_HANDLE image_handle,EFI_GRAPHICS_OUTPUT_PROTOCOL** gop);//GOPを取得する
+const CHAR16* GetPixelFormatUnicode(EFI_GRAPHICS_PIXEL_FORMAT fmt);//説明がないが、内容的にGetMemoryTypeUnicodeと同じだと推測される。
 
 EFI_STATUS EFIAPI UefiMain(
     EFI_HANDLE image_handle,
@@ -43,9 +43,12 @@ EFI_STATUS EFIAPI UefiMain(
     );
     SaveMemoryMap(&memmap, memmap_file);
     memmap_file->Close(memmap_file);
-
+//  ブートローダーからピクセルを書く。
+    //まずGOPを取得する。
     EFI_GRAPHICS_OUTPUT_PROTOCOL* gop;
     OpenGOP(image_handle,&gop);
+    //以下2つのPrintはほとんど説明がない。gopに関する情報を出力するとしかない。
+    //Print文なのでOSの本質的なところではないと予測されるのでとりあえず写経だけする。
     Print(L"Resolution: %ux%u, Pixel Format: %s, %u pixels/line\n",
         gop->Mode->Info->HorizontalResolution,
         gop->Mode->Info->VerticalResolution,
@@ -57,12 +60,12 @@ EFI_STATUS EFIAPI UefiMain(
         gop->Mode->FrameBufferBase + gop->Mode->FrameBufferSize,
         gop->Mode->FrameBufferSize
     );
-
+    //画面描画のコア機能。
     UINT8* frame_buffer = (UINT8*)gop->Mode->FrameBufferBase;
-    for (UINTN i=0; i< gop->Mode->FrameBufferSize; ++i){
+    for (UINTN i=0; i< gop->Mode->FrameBufferSize; ++i){//なぜ++i? 何か動作が違うのだろうか？
         frame_buffer[i] = 255 ;
     }
-
+//  ピクセル描画完了。
     EFI_FILE_PROTOCOL* kernel_file;
     root_dir->Open(
         root_dir,&kernel_file,L"\\kernel.elf",
@@ -107,15 +110,11 @@ EFI_STATUS EFIAPI UefiMain(
             while(1);
         }
     }
-    //エントリポイントの引数に描画に必要なデータを渡す。
     UINT64 entry_addr = *(UINT64*)(kernel_base_addr + 24);
     
-    typedef void EntryPointType(UINT64, UINT64);
+    typedef void EntryPointType(void);//EntryPointTypeは関数型のプロトタイプ宣言。
     EntryPointType* entry_point = (EntryPointType*) entry_addr;
-    entry_point(gop->Mode->FrameBufferBase,/*フレームバッファの先頭アドレス*/
-                gop->Mode->FrameBufferSize /*フレームバッファの全体の大きさ*/
-    );
-    //エントリポイントの変更終了
+    entry_point();
     Print(L"All done\n");
     while(1);
     return EFI_SUCCESS;
@@ -212,7 +211,7 @@ const CHAR16* GetMemoryTypeUnicode(EFI_MEMORY_TYPE type){
         default                         : return L"InvalidMemoryType";
     }
 }
-
+//GOPを取得する。
 EFI_STATUS OpenGOP(EFI_HANDLE image_handle,
     EFI_GRAPHICS_OUTPUT_PROTOCOL** gop){
         UINTN num_gop_handles = 0;
@@ -235,7 +234,7 @@ EFI_STATUS OpenGOP(EFI_HANDLE image_handle,
     FreePool(gop_handles);
     return EFI_SUCCESS;
 }
-
+//タイプ値から型の文字列の変換をする？
 const CHAR16* GetPixelFormatUnicode(EFI_GRAPHICS_PIXEL_FORMAT fmt){
     switch (fmt){
         case PixelRedGreenBlueReserved8BitPerColor: return L"PixelRedGreenBlueReserved8BitPerColor";
