@@ -2,7 +2,6 @@
 #include<Library/UefiLib.h>
 #include<Library/UefiBootServicesTableLib.h>
 #include<Library/PrintLib.h>
-#include<Library/MemoryAllocationLib.h>
 #include<Protocol/LoadedImage.h>
 #include<Protocol/SimpleFileSystem.h>
 #include<Protocol/DiskIo2.h>
@@ -22,14 +21,13 @@ EFI_STATUS GetMemoryMap(struct MemoryMap *map);
 EFI_STATUS OpenRootDir(EFI_HANDLE image_handle, EFI_FILE_PROTOCOL **root);
 EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL *file);
 const CHAR16* GetMemoryTypeUnicode(EFI_MEMORY_TYPE type);
-EFI_STATUS OpenGOP(EFI_HANDLE image_handle,EFI_GRAPHICS_OUTPUT_PROTOCOL** gop);//GOPを取得する
-const CHAR16* GetPixelFormatUnicode(EFI_GRAPHICS_PIXEL_FORMAT fmt);//説明がないが、内容的にGetMemoryTypeUnicodeと同じだと推測される。
 
 EFI_STATUS EFIAPI UefiMain(
     EFI_HANDLE image_handle,
     EFI_SYSTEM_TABLE *system_table
 )
 {
+//  過去に記述
     Print(L"Hello,Mikan world!\n");
     CHAR8 memmap_buff[4096 * 4];
     struct MemoryMap memmap = {sizeof(memmap_buff),memmap_buff,0,0,0,0};
@@ -43,78 +41,76 @@ EFI_STATUS EFIAPI UefiMain(
     );
     SaveMemoryMap(&memmap, memmap_file);
     memmap_file->Close(memmap_file);
-//  ブートローダーからピクセルを書く。
-    //まずGOPを取得する。
-    EFI_GRAPHICS_OUTPUT_PROTOCOL* gop;
-    OpenGOP(image_handle,&gop);
-    //以下2つのPrintはほとんど説明がない。gopに関する情報を出力するとしかない。
-    //Print文なのでOSの本質的なところではないと予測されるのでとりあえず写経だけする。
-    Print(L"Resolution: %ux%u, Pixel Format: %s, %u pixels/line\n",
-        gop->Mode->Info->HorizontalResolution,
-        gop->Mode->Info->VerticalResolution,
-        GetPixelFormatUnicode(gop->Mode->Info->PixelFormat),
-        gop->Mode->Info->PixelsPerScanLine
-    );
-    Print(L"Frame Buffer: 0x%0lx - 0x%0lx, Size: %lu bytes\n",
-        gop->Mode->FrameBufferBase,
-        gop->Mode->FrameBufferBase + gop->Mode->FrameBufferSize,
-        gop->Mode->FrameBufferSize
-    );
-    //画面描画のコア機能。
-    UINT8* frame_buffer = (UINT8*)gop->Mode->FrameBufferBase;
-    for (UINTN i=0; i< gop->Mode->FrameBufferSize; ++i){//なぜ++i? 何か動作が違うのだろうか？
-        frame_buffer[i] = 255 ;
-    }
-//  ピクセル描画完了。
+//  ここまで
+//  ここから新しく記述。
+//  カーネルを読み込む。
     EFI_FILE_PROTOCOL* kernel_file;
     root_dir->Open(
         root_dir,&kernel_file,L"\\kernel.elf",
         EFI_FILE_MODE_READ,0
     );
-    
+    //EFI_FILE_INFOは構造体。構造体を代入できる大きさの配列をVLAとして宣言する。
     UINTN file_info_size = sizeof(EFI_FILE_INFO) + sizeof(CHAR16) * 12;
     UINT8 file_info_buffer[file_info_size];
-    
+    //配列を容易で来たら、ファイル情報を取得する。
     kernel_file->GetInfo(
         kernel_file, &gEfiFileInfoGuid,
         &file_info_size, file_info_buffer
-    );
-    
+    );//これでファイル情報が file_info_buffer に保存される。
+    //file_info_bufferはファイル情報が入っているが、UINT8型なのでデータが変な見え方になる。
+    //UINT8　から　EFI_FILE_INFO　にキャストする。
     EFI_FILE_INFO* file_info = (EFI_FILE_INFO*)file_info_buffer;
+    //これで kernel.elf のファイル情報をメモリに書き込み、データの先頭アドレスを持った、 file_info ができた。
+    //file_info は EFI_FILE_INFO構造体へのポインタなので、当然アロー演算子でメンバにアクセスできる。
+    // kernel.elf をメモリにロードするために、ロードする大きさを取得する。
     UINTN kernel_file_size = file_info->FileSize;
+    //カーネルをロードする位置はリンカーオプションで指定しているのでその位置を書く。
     EFI_PHYSICAL_ADDRESS kernel_base_addr = 0x100000;
-    
+    //指定したアドレスにロードする。
     gBS->AllocatePages(
-        AllocateAddress,
-        EfiLoaderData,
-        (kernel_file_size + 0xfff) / 0x1000, 
-        &kernel_base_addr
-    );
+        AllocateAddress,/*AllocateAddressを指定すれば指定アドレスにロードする。*/
+        EfiLoaderData,/*ブートローダが使うときはEfiLoaderDataでいいらしい。そういうものと思っておく*/
+        (kernel_file_size + 0xfff) / 0x1000, /*0xfffを足すのは、kernel_file_size==0x1000のとき+0xfffしても計算結果は同じになるから。*/
+        &kernel_base_addr/*指定のアドレス。*/
+    );//メモリ確保完了。早速カーネルを読み込む。
+    //カーネルの読み込み。
     kernel_file->Read(kernel_file,&kernel_file_size,(VOID*)kernel_base_addr);
     
     Print(L"Kerneel: 0x%0lx (%lu bytes)\n",kernel_base_addr,kernel_file_size);
-
+//  カーネル読み込み完了。
+//  カーネルを起動する前にブートサービスを停止する。
     EFI_STATUS status;
-    status = gBS->ExitBootServices(image_handle,memmap.map_key);
-    if(EFI_ERROR(status)){
+    //ExitBootServicesは現状そういうものと思うしかない。
+    //メモリマップキーが変化していると失敗する。ゆえに、実行する直前にメモリマップキーを取得するのがいい？
+    //メモリマップキーの変化はブートサービスの利用で変化するらしい。
+    status = gBS->ExitBootServices(image_handle,memmap.map_key);//ほとんど失敗するなのでif文を使う。
+    if(EFI_ERROR(status)){/*戻り値 statusで失敗かどうかわかる。*/
+        //メモリマップを再取得してマップキーを更新する。
         status = GetMemoryMap(&memmap);
-        
+        //取得に失敗するとエラーを出力する。
         if(EFI_ERROR(status)){
             Print(L"failed to get memory map: %r\n",status);
             while(1);
         }
-        
+        //再度ブートサービスを停止する。
         status = gBS->ExitBootServices(image_handle,memmap.map_key);
         if(EFI_ERROR(status)){
             Print(L"Could not exit boot service: %r\n",status);
             while(1);
         }
     }
+//  ブートサービス停止完了。
+//  カーネルを呼び出す。
+    //アドレスは1つあたり1バイト==8bit。エントリポイントのアドレスは8バイトの整数、オフセットは24バイトなので
     UINT64 entry_addr = *(UINT64*)(kernel_base_addr + 24);
-    
+    //EntryPointTypeという返り値がvoidで引数がvoidの関数型を宣言する。
     typedef void EntryPointType(void);//EntryPointTypeは関数型のプロトタイプ宣言。
+    //これで関数の型（プロトタイプ宣言）と引数と返り値の型を明らかにしたのでEntryPointTypeにキャストすれば関数が使えるようになった。
+    //->Main.cがC言語のファイルなのでC言語の関数として呼び出すことができるようにしなければならない。
+    //kernel.elfの中からエントリポイント関数のアドレスを格納したentry_addrをEntryPointType型の関数ポインタにキャストする。
     EntryPointType* entry_point = (EntryPointType*) entry_addr;
     entry_point();
+//  カーネルの呼び出し完了。
     Print(L"All done\n");
     while(1);
     return EFI_SUCCESS;
@@ -209,39 +205,5 @@ const CHAR16* GetMemoryTypeUnicode(EFI_MEMORY_TYPE type){
         case EfiPersistentMemory        : return L"EfiPersistentMemory";
         case EfiMaxMemoryType           : return L"EfiMaxMemoryType";
         default                         : return L"InvalidMemoryType";
-    }
-}
-//GOPを取得する。
-EFI_STATUS OpenGOP(EFI_HANDLE image_handle,
-    EFI_GRAPHICS_OUTPUT_PROTOCOL** gop){
-        UINTN num_gop_handles = 0;
-        EFI_HANDLE* gop_handles = NULL;
-        gBS->LocateHandleBuffer(
-            ByProtocol,
-            &gEfiGraphicsOutputProtocolGuid,
-            NULL,
-            &num_gop_handles,
-            &gop_handles
-        );
-        gBS->OpenProtocol(
-            gop_handles[0],
-            &gEfiGraphicsOutputProtocolGuid,
-            (VOID**)gop,
-            image_handle,
-            NULL,
-            EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL
-        );
-    FreePool(gop_handles);
-    return EFI_SUCCESS;
-}
-//タイプ値から型の文字列の変換をする？
-const CHAR16* GetPixelFormatUnicode(EFI_GRAPHICS_PIXEL_FORMAT fmt){
-    switch (fmt){
-        case PixelRedGreenBlueReserved8BitPerColor: return L"PixelRedGreenBlueReserved8BitPerColor";
-        case PixelBlueGreenRedReserved8BitPerColor: return L"PixelBlueGreenRedReserved8BitPerColor";
-        case PixelBitMask                         : return L"PixelBitMask";
-        case PixelBltOnly                         : return L"PixelBltOnly";
-        case PixelFormatMax                       : return L"PixelFormatMax";
-        default                                   : return L"InvalidPixelFormat";
     }
 }
