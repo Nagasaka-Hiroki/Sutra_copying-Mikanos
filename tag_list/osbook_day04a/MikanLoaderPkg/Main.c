@@ -8,7 +8,6 @@
 #include<Protocol/DiskIo2.h>
 #include<Protocol/BlockIo.h>
 #include<Guid/FileInfo.h>
-#include"frame_buffer_config.hpp"
 
 struct MemoryMap {
     UINTN buffer_size;
@@ -25,45 +24,48 @@ EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL *file);
 const CHAR16* GetMemoryTypeUnicode(EFI_MEMORY_TYPE type);
 EFI_STATUS OpenGOP(EFI_HANDLE image_handle,EFI_GRAPHICS_OUTPUT_PROTOCOL** gop);
 const CHAR16* GetPixelFormatUnicode(EFI_GRAPHICS_PIXEL_FORMAT fmt);
-void Halt(void);
+void Halt(void);//CPUを待機状態にする。エラー処理で動作が停止したときに実行する。
 
 EFI_STATUS EFIAPI UefiMain(
     EFI_HANDLE image_handle,
     EFI_SYSTEM_TABLE *system_table
 )
 {
-    EFI_STATUS status;
+    EFI_STATUS status;//エラー処理用変数
     Print(L"Hello,Mikan world!\n");
     CHAR8 memmap_buff[4096 * 4];
     struct MemoryMap memmap = {sizeof(memmap_buff),memmap_buff,0,0,0,0};
     status = GetMemoryMap(&memmap);
+    //メモリマップ取得失敗。エラー処理。
     if (EFI_ERROR(status)){
         Print(L"failed to get memory map: %r\n",status);
         Halt();
     }
-
     EFI_FILE_PROTOCOL *root_dir;
     status = OpenRootDir(image_handle,&root_dir);
+    //ルートディレクトリのオープン失敗のエラー処理。
     if (EFI_ERROR(status)){
         Print(L"failed to open root directory: %r\n",status);
         Halt();
     }
-
     EFI_FILE_PROTOCOL *memmap_file;
     status = root_dir->Open(
         root_dir,&memmap_file,L"\\memmap",
         EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_CREATE,0
     );
+    //ファイルオープン失敗のエラー処理。
     if(EFI_ERROR(status)){
         Print(L"failed to open file '\\memmap': %r\n",status);
         Print(L"Ignored.\n");
     } else {
         status = SaveMemoryMap(&memmap, memmap_file);
+        //ファイル書き込み失敗のエラー処理。
         if(EFI_ERROR(status)){
             Print(L"failed to open file '\\memmap': %r\n",status);
             Halt();
         }
         status = memmap_file->Close(memmap_file);
+        //ファイルクローズ失敗のエラー処理。
         if(EFI_ERROR(status)){
             Print(L"failed to close memory map: %r\n",status);
             Halt();
@@ -72,6 +74,7 @@ EFI_STATUS EFIAPI UefiMain(
 
     EFI_GRAPHICS_OUTPUT_PROTOCOL* gop;
     status = OpenGOP(image_handle,&gop);
+    //GOP取得失敗のエラー処理。
     if (EFI_ERROR(status)){
         Print(L"failed to open GOP: %r\n",status);
         Halt();
@@ -99,6 +102,7 @@ EFI_STATUS EFIAPI UefiMain(
         root_dir,&kernel_file,L"\\kernel.elf",
         EFI_FILE_MODE_READ,0
     );
+    //カーネルファイルオープン失敗のエラー処理。
     if (EFI_ERROR(status)){
         Print(L"failed to open file '\\kernel.elf': %r\n",status);
         Halt();
@@ -111,6 +115,7 @@ EFI_STATUS EFIAPI UefiMain(
         kernel_file, &gEfiFileInfoGuid,
         &file_info_size, file_info_buffer
     );
+    //ファイル情報取得失敗のエラー処理。
     if (EFI_ERROR(status)){
         Print(L"failed to get file infomation: %r\n",status);
         Halt();
@@ -126,22 +131,25 @@ EFI_STATUS EFIAPI UefiMain(
         (kernel_file_size + 0xfff) / 0x1000, 
         &kernel_base_addr
     );
+    //メモリ確保失敗のエラー処理。
     if (EFI_ERROR(status)){
         Print(L"failed to allocate pages: %r\n",status);
         Halt();
     }
 
     status = kernel_file->Read(kernel_file,&kernel_file_size,(VOID*)kernel_base_addr);
+    //カーネルファイル読み込み失敗のエラー処理。
     if (EFI_ERROR(status)){
         Print(L"err: %r\n",status);
         Halt();
     }
     
-    Print(L"Kernel: 0x%0lx (%lu bytes)\n",kernel_base_addr,kernel_file_size);
+    Print(L"Kerneel: 0x%0lx (%lu bytes)\n",kernel_base_addr,kernel_file_size);
 
     status = gBS->ExitBootServices(image_handle,memmap.map_key);
     if(EFI_ERROR(status)){
         status = GetMemoryMap(&memmap);
+        
         if(EFI_ERROR(status)){
             Print(L"failed to get memory map: %r\n",status);
             Halt();
@@ -153,34 +161,15 @@ EFI_STATUS EFIAPI UefiMain(
             Halt();
         }
     }
-
+    //エントリポイントの引数に描画に必要なデータを渡す。
     UINT64 entry_addr = *(UINT64*)(kernel_base_addr + 24);
-    //frame_buffer_config構造体を使って情報をカーネルに渡す。(frame_buffer_config.hpp)
-    struct FrameBufferConfig config = {
-        (UINT8*)gop->Mode->FrameBufferBase,
-        gop->Mode->Info->PixelsPerScanLine,
-        gop->Mode->Info->HorizontalResolution,
-        gop->Mode->Info->VerticalResolution,
-        0
-    };
-    //サポートされているピクセルフォーマットに合わせて数値を設定する。
-    switch (gop->Mode->Info->PixelFormat) {
-        case PixelRedGreenBlueReserved8BitPerColor:
-            config.pixel_format = kPixelRGBResv8BitPerColor;
-            break;
-        case PixelBlueGreenRedReserved8BitPerColor:
-            config.pixel_format = kPixelBGRResv8BitRepColor;
-            break;
-        default:
-            Print(L"Unimplemented pixel format: %d\n", gop->Mode->Info->PixelFormat);
-            Halt();
-    }
-    //frame_buffer_config構造体へのポインタを引数に渡してカーネルを起動する。
-    typedef void EntryPointType(const struct FrameBufferConfig*);
+    
+    typedef void EntryPointType(UINT64, UINT64);
     EntryPointType* entry_point = (EntryPointType*) entry_addr;
-    //KernelMainでは参照型として受け取るが、C側ではポインタを渡せば良い。
-    entry_point(&config);
-
+    entry_point(gop->Mode->FrameBufferBase,/*フレームバッファの先頭アドレス*/
+                gop->Mode->FrameBufferSize /*フレームバッファの全体の大きさ*/
+    );
+    //エントリポイントの変更終了
     Print(L"All done\n");
     while(1);
     return EFI_SUCCESS;
@@ -331,7 +320,7 @@ const CHAR16* GetPixelFormatUnicode(EFI_GRAPHICS_PIXEL_FORMAT fmt){
         default                                   : return L"InvalidPixelFormat";
     }
 }
-
+//インラインアセンブラ。CPUを待機状態にする。
 void Halt(void){
     while(1) __asm__("hlt");
 }
