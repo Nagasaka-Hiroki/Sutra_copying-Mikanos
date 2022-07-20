@@ -6,46 +6,85 @@
 #include<cstddef>
 #include"frame_buffer_config.hpp"
 
-//現在想定しているピクセルフォーマットの場合RGB各色がそれぞれ8bitづつ持てるのでuint8_tを使う
 struct PixelColor {
     uint8_t r,g,b;
 };
-//プロトタイプ宣言。みかん本はKernelMainから説明されるので、説明の順番通りに書く場合プロトタイプ宣言しないとエラーが出る。
-int WritePixel(const FrameBufferConfig& config, int x, int y, const PixelColor& c);
+//PixelWriter class
+class PixelWriter {
+    public:
+     PixelWriter(const FrameBufferConfig& config) : config_{config} {
+     }
+     virtual ~PixelWriter() = default;
+     virtual void Write(int x, int y, const PixelColor& c) = 0;
+    
+    protected:
+     uint8_t* PixelAt(int x, int y) {
+        return config_.frame_buffer + 4 * (config_.pixels_per_scan_line * y + x);
+     }
+    
+    private:
+     const FrameBufferConfig& config_;
+};
+//PixelWriter class を継承しピクセルフォーマットが異なるクラスをそれぞれ定義する。
+//ピクセルフォーマットがPixelRGBResv8BitPerColorの場合。
+class RGBResv8BitPerColorWriter : public PixelWriter {
+    public:
+     using PixelWriter::PixelWriter;//コンストラクタの代わり。
+     
+     virtual void Write(int x, int y, const PixelColor& c) override {
+        auto p = PixelAt(x,y);
+        p[0] = c.r;
+        p[1] = c.g;
+        p[2] = c.b;
+     }
+};
+//ピクセルフォーマットがPixelBGRResv8BitRepColorの場合。
+class BGRResv8BitPerColorWriter : public PixelWriter {
+    public:
+     using PixelWriter::PixelWriter;
 
-//みかん本で説明されている順番に関数を書いていく。
-//KernelMain ブートローダ側で引数を改造したのでそれに合わせる。c++の参照を使う。
+     virtual void Write(int x, int y, const PixelColor& c) override {
+        auto p = PixelAt(x,y);
+        p[0] = c.b;
+        p[1] = c.g;
+        p[2] = c.r;
+     }
+};
+
+//演算子の定義 new
+void* operator new(size_t size, void* buf){
+    return buf;
+}
+//演算子の定義 delete
+void operator delete(void* obj) noexcept{
+}
+
+//グローバル変数を定義。
+char pixel_writer_buf[sizeof(RGBResv8BitPerColorWriter)];
+PixelWriter* pixel_writer;//スーパークラスで変数を宣言する。
+
 extern "C" void KernelMain(const FrameBufferConfig& frame_buffer_config) {
-    //画面を白く塗るところを参照で書き換える。
+    //サポートしているピクセルフォーマットに従ってインスタンスを生成する。
+    switch (frame_buffer_config.pixel_format) {
+        case kPixelRGBResv8BitPerColor:
+            pixel_writer = new(pixel_writer_buf) RGBResv8BitPerColorWriter{frame_buffer_config};
+            break;
+        case kPixelBGRResv8BitPerColor:
+            pixel_writer = new(pixel_writer_buf) BGRResv8BitPerColorWriter{frame_buffer_config}; 
+            break;
+    }
+    //背景を白く塗る。
     for(int x=0; x<frame_buffer_config.horizontal_resolution; x++){
-        for( int y=0; y<frame_buffer_config.vertical_resolution; y++){
-            WritePixel(frame_buffer_config, x, y, {255,255,255});
+        for(int y=0; y<frame_buffer_config.vertical_resolution; y++){
+            pixel_writer->Write(x, y, {255,255,255});
         }
     }
-    //四角の領域を{0,255,0}で塗りつぶす。おそらく、環境によらず緑になるはず。
+    //任意の領域を緑に塗る
     for(int x=0; x<200; x++){
         for(int y=0; y<100; y++){
-            WritePixel(frame_buffer_config, 100+x , 100+y, {0, 255, 0});
+            pixel_writer->Write(x , y, {0, 255, 0});
         }
     }
 
     while(1) __asm__("hlt");
-}
-//範囲を指定してピクセルを書く。
-int WritePixel(const FrameBufferConfig& config, int x, int y, const PixelColor& c) {
-    const int pixel_position = config.pixel_per_scan_line * y + x;
-    if(config.pixel_format == kPixelRGBResv8BitPerColor){
-        uint8_t* p = &config.frame_buffer[4 * pixel_position];
-        p[0] = c.r;
-        p[1] = c.g;
-        p[2] = c.b;
-    } else if(config.pixel_format == kPixelBGRResv8BitRepColor){
-        uint8_t* p = &config.frame_buffer[4 * pixel_position];
-        p[0] = c.b;
-        p[1] = c.g;
-        p[2] = c.r;
-    } else {
-        return -1;
-    }
-    return 0;
 }
