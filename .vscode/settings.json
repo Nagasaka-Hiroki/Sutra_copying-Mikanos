@@ -1,7 +1,0 @@
-{
-    "C_Cpp.errorSquiggles": "Disabled",
-    "files.associations": {
-        "uefibootservicestablelib.h": "c",
-        "simplefilesystem.h": "c"
-    },
-}
