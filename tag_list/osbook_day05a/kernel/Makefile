@@ -1,6 +1,5 @@
 TARGET = kernel.elf
-OBJS = main.o graphics.o font.o
-DEPENDS = $(join $(dir $(OBJS)), $(addprefix ., $(notdir $(OBJS:.o=.d))))
+OBJS = main.o
 
 CXXFLAGS += -O2 -Wall -g --target=x86_64-elf -ffreestanding -mno-red-zone \
 			-fno-exceptions -fno-rtti -std=c++17
@@ -18,14 +17,3 @@ kernel.elf: $(OBJS) Makefile
 
 %.o: %.cpp Makefile
 	clang++ $(CPPFLAGS) $(CXXFLAGS) -c $<
-
-.%.d: %.cpp
-	clang++ $(CPPFLAGS) $(CXXFLAGS) -MM $< > $@
-	$(eval OBJ = $(<:.cpp=o))
-	sed --in-place 's|$(notdir $(OBJ))|$(OBJ)|' $@
-
-.PHONY: depends
-depends:
-	$(MAKE) $(DEPENDS)
-
--include $(DEPENDS)

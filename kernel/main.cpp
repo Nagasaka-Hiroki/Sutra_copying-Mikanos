@@ -6,69 +6,10 @@
 #include<cstddef>
 #include"frame_buffer_config.hpp"
 
-//Aのフォント
-const uint8_t kFontA[16] = {
-    0b00000000, // 
-    0b00011000, //    **
-    0b00011000, //    **
-    0b00011000, //    **
-    0b00011000, //    **
-    0b00100100, //   *  *
-    0b00100100, //   *  *
-    0b00100100, //   *  *
-    0b00100100, //   *  *
-    0b01111110, //  ******
-    0b01000010, //  *    *
-    0b01000010, //  *    *
-    0b01000010, //  *    *
-    0b11100111, // ***  ***
-    0b00000000, // 
-    0b00000000, // 
-};
-
-struct PixelColor {
-    uint8_t r,g,b;
-};
-
-class PixelWriter {
-    public:
-     PixelWriter(const FrameBufferConfig& config) : config_{config} {
-     }
-     virtual ~PixelWriter() = default;
-     virtual void Write(int x, int y, const PixelColor& c) = 0;
-    
-    protected:
-     uint8_t* PixelAt(int x, int y) {
-        return config_.frame_buffer + 4 * (config_.pixels_per_scan_line * y + x);
-     }
-    
-    private:
-     const FrameBufferConfig& config_;
-};
-
-class RGBResv8BitPerColorWriter : public PixelWriter {
-    public:
-     using PixelWriter::PixelWriter;
-     
-     virtual void Write(int x, int y, const PixelColor& c) override {
-        auto p = PixelAt(x,y);
-        p[0] = c.r;
-        p[1] = c.g;
-        p[2] = c.b;
-     }
-};
-
-class BGRResv8BitPerColorWriter : public PixelWriter {
-    public:
-     using PixelWriter::PixelWriter;
-
-     virtual void Write(int x, int y, const PixelColor& c) override {
-        auto p = PixelAt(x,y);
-        p[0] = c.b;
-        p[1] = c.g;
-        p[2] = c.r;
-     }
-};
+//分割したファイルのヘッダファイルをインクルードする。
+#include"frame_buffer_config.hpp"
+#include"graphics.hpp"
+#include"font.hpp"
 
 void* operator new(size_t size, void* buf){
     return buf;
@@ -77,34 +18,16 @@ void* operator new(size_t size, void* buf){
 void operator delete(void* obj) noexcept{
 }
 
-char pixel_writer_buf[sizeof(RGBResv8BitPerColorWriter)];
+char pixel_writer_buf[sizeof(RGBResv8BitPerColorPixelWriter)];
 PixelWriter* pixel_writer;
-
-// A を画面に出力する。
-void WriteAscii(PixelWriter& writer, int x, int y, char c, const PixelColor& color){
-    //Aしか今データがないのでA以外のAsciiコードが来た場合は何も出力しない。
-    if(c != 'A'){
-        return;
-    }
-    //画面に対して縦の方向が配列の番号の方向に対応する。
-    //x80u == 0b10000000u　に相当する。ゆえに文字データ(kFontA)の上位ビットから描画していく。
-    //画面に対して横方向に隣のピクセルを描画するにはデータに対して左シフトして演算をする。 
-    for(int dy=0; dy<16; dy++){
-        for(int dx=0; dx<8; dx++){
-            if((kFontA[dy]<<dx) & 0x80u){
-                writer.Write(x+dx, y+dy, color);
-            }
-        }
-    }
-}
 
 extern "C" void KernelMain(const FrameBufferConfig& frame_buffer_config) {
     switch (frame_buffer_config.pixel_format) {
         case kPixelRGBResv8BitPerColor:
-            pixel_writer = new(pixel_writer_buf) RGBResv8BitPerColorWriter{frame_buffer_config};
+            pixel_writer = new(pixel_writer_buf) RGBResv8BitPerColorPixelWriter{frame_buffer_config};
             break;
         case kPixelBGRResv8BitPerColor:
-            pixel_writer = new(pixel_writer_buf) BGRResv8BitPerColorWriter{frame_buffer_config}; 
+            pixel_writer = new(pixel_writer_buf) BGRResv8BitPerColorPixelWriter{frame_buffer_config}; 
             break;
     }
 
@@ -119,7 +42,7 @@ extern "C" void KernelMain(const FrameBufferConfig& frame_buffer_config) {
             pixel_writer->Write(x , y, {0, 255, 0});
         }
     }
-    //WriteAscii関数で文字(A)を描画する。
+    
     WriteAscii(*pixel_writer, 50, 50, 'A',{0, 0, 0});
     WriteAscii(*pixel_writer, 58, 50, 'A',{0, 0, 0});
 
