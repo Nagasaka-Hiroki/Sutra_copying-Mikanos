@@ -1,5 +1,4 @@
 #過去に管理下にあった、kernel.elfとmain.oはgit rm で削除する。
 kernel.elf
-hankaku.bin
 *.o
 .*.d
