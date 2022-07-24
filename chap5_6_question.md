@@ -59,8 +59,8 @@
 で調べてみたら、上記URLと同じ文章が出てきた。とりあえず引用する。引用元は```man objcopy```または、[Chapter 4. objcopy](http://web.mit.edu/rhel-doc/3/rhel-binutils-en-3/objcopy.html)に似た内容？同じ内容？かわからないが重要なワードが見えたので一応リンクを貼っておく。
 
 > - man objcopy の -B の説明文。  
--B bfdarch
-       --binary-architecture=bfdarch
+-B bfdarch  
+       --binary-architecture=bfdarch  
            Useful when transforming a architecture-less input file into an object file.  In
            this case the output architecture can be set to bfdarch.  This option will be
            ignored if the input file has a known bfdarch.  You can access this binary data
@@ -75,3 +75,35 @@
 3. _binary_objfile_size
 
 それぞれがどういった変数なのかといった説明はすぐに見つからなかったが、とりあえずここを見たら変数名がわかるということだけメモ。
+
+### osbook_day05c終了
+　この節では、ざっくりと(1)データをバイナリに変換して指定実行ファイル形式とリンクする方法、(2) リンクされたデータを使う方法 の2つの内容が書かれていた。  
+ページ数的には大したことはない。しかし内容は結構重要だと思うのでしっかり把握する必要がある。
+
+また、今更だがmakeを実行するたびに拡張子が```.d```のファイルが作成される。中身を見てもプログラムというよりは設定内容を書いているだけのような感じ。このファイルはMakefileが作っているのでレシピを見ればいいのだが、いかんせん現状どういった効果があるかわからない。ひとまずわからないということだけメモする。わからなくても進めていく。
+
+## osbook_day05d
+### caddr_t?
+以下のリンクに定義されていた。  
+> [http://www.sde.cs.titech.ac.jp/~gondow/dwarf2-xml/HTML-rxref/app/gcc-3.3.2/lib/gcc-lib/sparc-sun-solaris2.8/3.3.2/include/sys/types.h.html](http://www.sde.cs.titech.ac.jp/~gondow/dwarf2-xml/HTML-rxref/app/gcc-3.3.2/lib/gcc-lib/sparc-sun-solaris2.8/3.3.2/include/sys/types.h.html)  
+
+これによれば、  
+```
+    typedef char *caddr_t;
+```
+となっているので、```char*```だと思えばいいと思う。
+
+### NewLib?
+　標準Cライブラリの一種。参考は以下の通り。  
+> - [https://www.weblio.jp/content/Newlib](https://www.weblio.jp/content/Newlib)  
+
+標準Cライブラリの種類は以下のURLに書かれている。  
+> [標準Cライブラリ](https://www.wdic.org/w/TECH/%E6%A8%99%E6%BA%96C%E3%83%A9%E3%82%A4%E3%83%96%E3%83%A9%E3%83%AA)  
+
+上記URLの中を読むと、種類ごとにライセンスが違う。たとえばNewLibならBSDライクなライセンス、glibならLGPLライセンスといった感じらしい。しかし、読み進めると種類は違えどヘッダファイルの名前は規格で決まっているみたい。なので、それぞれの種類はライセンスによる違いや環境による違いで使い分けるといった感じだと思って今は解釈する。本文中にもNewLibは組み込み機器でも利用できるといった具合になっているので使い分けが重要？
+
+->もし複数の種類の標準ライブラリを用いているとするならば、どこを見ればどの種類の標準ライブラリを使っているとわかるのだろうか？
+
+### フォーマットの指定についてメモ
+　今回は標準ライブラリの関数でフォーマットを守った文字列を生成している。なのでこちらが準備するのは標準ライブラリを使えるようにする関数群の準備と文字列を描画する関数である。
+

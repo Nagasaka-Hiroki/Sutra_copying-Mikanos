@@ -4,7 +4,7 @@
 
 #include<cstdint>
 #include<cstddef>
-#include<cstdio>
+#include"frame_buffer_config.hpp"
 
 //分割したファイルのヘッダファイルをインクルードする。
 #include"frame_buffer_config.hpp"
@@ -42,16 +42,11 @@ extern "C" void KernelMain(const FrameBufferConfig& frame_buffer_config) {
             pixel_writer->Write(x , y, {0, 255, 0});
         }
     }
-    
+    //アスキーコード '!'から'~'までを描画する。
     int i=0;
     for (char c='!'; c<='~'; c++, i++){
         WriteAscii(*pixel_writer, 8*i, 50, c,{0, 0, 0});
     }
-    //文字列で描画する。
-    WriteString(*pixel_writer, 0, 66, "Hello, world!",{ 0, 0, 255});
-    //フォーマットを指定して文字列を描画する。
-    char buf[128];
-    sprintf(buf,"1 + 2 = %d", 1+2);
-    WriteString(*pixel_writer, 0, 82, buf, { 0, 0, 0});
+    
     while(1) __asm__("hlt");
 }

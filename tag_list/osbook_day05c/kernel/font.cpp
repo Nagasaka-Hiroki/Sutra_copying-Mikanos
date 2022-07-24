@@ -7,10 +7,12 @@ extern const uint8_t _binary_hankaku_bin_end;
 extern const uint8_t _binary_hankaku_bin_size;
 
 const uint8_t* GetFont(char c) {
-    auto index = 16 * static_cast<unsigned int>(c);
+    //文字 c　のアスキーコードの16倍を計算する。その値が、hankaku.o内に含まれる各文字データの先頭アドレスに対応するように作られている。
+    auto index = 16 * static_cast<unsigned int>(c);//先頭アドレスを計算する。
     if(index >= reinterpret_cast<uintptr_t>(&_binary_hankaku_bin_size)) {
         return nullptr;
     }
+    //ここは推測だがオフセットしているだけだと思われる。
     return &_binary_hankaku_bin_start + index;
 }
 
@@ -25,12 +27,5 @@ void WriteAscii(PixelWriter& writer, int x, int y, char c, const PixelColor& col
                 writer.Write( x+dx, y+dy, color);
             }
         }
-    }
-}
-
-//文字列で出力する。
-void WriteString(PixelWriter& writer, int x, int y, const char* s, const PixelColor& color) {
-    for (int i=0; s[i]!='\0'; i++){
-        WriteAscii(writer, x+ 8*i, y, s[i], color);
     }
 }
