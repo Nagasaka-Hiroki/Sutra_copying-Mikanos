@@ -6,11 +6,47 @@
 #include<cstddef>
 #include<cstdio>
 
-//分割したファイルのヘッダファイルをインクルードする。
 #include"frame_buffer_config.hpp"
 #include"graphics.hpp"
 #include"font.hpp"
 #include"console.hpp"
+
+const PixelColor kDesktopBGColor{  45, 118, 237};
+const PixelColor kDesktopFGColor{ 255, 255, 255};
+
+//マウスカーソル
+const int kMouseCursorWidth=15;
+const int kMouseCursorHeight=24;
+//kMouseCursorWidthは文字数を表す。
+//kMouseCursorHeightは文字変数の数。
+const char mouse_cursor_shape[kMouseCursorHeight][kMouseCursorWidth+1]={
+/*行数と列数をコメントで表示する。*/
+/* 行数  \    列数    123456789abcdef    */
+/*   1   */         "@              ",
+/*   2   */         "@@             ",
+/*   3   */         "@.@            ",
+/*   4   */         "@..@           ",
+/*   5   */         "@...@          ",
+/*   6   */         "@....@         ",
+/*   7   */         "@.....@        ",
+/*   8   */         "@......@       ",
+/*   9   */         "@.......@      ",
+/*  10   */         "@........@     ",
+/*  11   */         "@.........@    ",
+/*  12   */         "@..........@   ",
+/*  13   */         "@...........@  ",
+/*  14   */         "@............@ ",
+/*  15   */         "@......@@@@@@@@",
+/*  16   */         "@......@       ",
+/*  17   */         "@....@@.@      ",
+/*  18   */         "@...@ @.@      ",
+/*  19   */         "@..@   @.@     ",
+/*  20   */         "@.@    @.@     ",
+/*  21   */         "@@      @.@    ",
+/*  22   */         "@       @.@    ",
+/*  23   */         "         @.@   ",
+/*  24   */         "         @@@   ",
+};
 
 void* operator new(size_t size, void* buf){
     return buf;
@@ -58,14 +94,41 @@ extern "C" void KernelMain(const FrameBufferConfig& frame_buffer_config) {
             pixel_writer->Write(x, y, {255,255,255});
         }
     }
-
+    
+    //画面サイズを取得
+    const int kFrameWidth=frame_buffer_config.horizontal_resolution;
+    const int kFrameeHeight=frame_buffer_config.vertical_resolution;
+    //OSぽい見た目にしてみる。
+    FillRectangle(*pixel_writer,
+                    {0,0},
+                    {kFrameWidth, kFrameeHeight-50},
+                    kDesktopBGColor);
+    FillRectangle(*pixel_writer,
+                    {0, kFrameeHeight-50},
+                    {kFrameWidth,50},
+                    {1,8,17});
+    FillRectangle(*pixel_writer,
+                    {0,kFrameeHeight-50},
+                    {kFrameWidth/5, 50},
+                    {80,80,80});
+    FillRectangle(*pixel_writer,
+                    {10, kFrameeHeight-40},
+                    {30,30},
+                    {160,160,160});
+    
     //コンソールをグローバル変数として使用する
     //配置newでメモリを確保して使用する。
-    console=new(console_buf) Console{*pixel_writer, { 0, 0, 0}, { 255, 255, 255}};
-    
-    //printkを使ってみる
-    for(int i=0; i<27; i++){
-        printk("printk: %d\n", i);
+    console=new(console_buf) Console{*pixel_writer, kDesktopFGColor, kDesktopBGColor};
+    printk("Welcom to Mikanos!\n");
+    //マウスカーソルの描画
+    for(int dy=0; dy<kMouseCursorHeight; dy++){
+        for(int dx=0; dx<kMouseCursorWidth; dx++){
+            if(mouse_cursor_shape[dy][dx]=='@'){
+                pixel_writer->Write(200+dx, 100+dy, { 0, 0, 0});
+            } else if (mouse_cursor_shape[dy][dx]=='.'){
+                pixel_writer->Write(200+dx, 100+dy, { 255, 255, 255});
+            }
+        }
     }
 
     while(1) __asm__("hlt");
