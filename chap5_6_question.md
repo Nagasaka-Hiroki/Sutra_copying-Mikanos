@@ -198,3 +198,60 @@ arr[11]=
 ### osbook_day06b終了
 　ただひたすら写経をしていただけだった。おおよその流れは理解できたが、現状自分で一からは書けないと言われても無理だと思う。しかし、アセンブラで作った関数をC++から使うという内容は面白かったので手を動かして良かったと思う。  
 　個人的にC/C++の内容はあまり難しくない。肝心なのはツールの部分。edk2やlldの部分のほうに関する理解やハードウェアとデバイスに関する理解及び知識不足が見受けられる。ハードを操作するプログラムは楽しいがこうして触っていると難しいところが多いので少しづつだが知識を広げていきたいと思う。
+
+## osbook_day06c
+### 無名名前空間
+　あまり使ったことがなかったのでここで調べてみる。参考は以下。  
+> - [【C++】無名名前空間とは【目的と用途、活用例】](https://marycore.jp/prog/cpp/unnamed-namespace/)  
+
+無名名前空間を使うと、ファイルの外から参照されない状態にできるらしい。  
+
+### volatile ?
+　初めて見た。以下を参考にする。
+> - [C++ volatile調査。局所的な最適化阻止](https://qiita.com/YukiMiyatake/items/1191ab03b6c0b5a22876)  
+
+最適化に関する制御をするらしい。上記URLでは逆アセンブルでアセンブラコードを見て最適化に関する違いを見ている。驚くべきは最適化によって無限ループが発生することが書かれていることだった。今まで最適化によってプログラムの動作が変わるので危険が伴うと聞いていた。知識としてはあったのだがそれを実際に見るのは初めてだったのでいいことを知れた。  
+このvolatileを使えば、最適化の危険が存在する箇所に対して最適化を無効にし効果的に最適を書けることができるようになる。そういった理解をしている。
+
+### using
+```
+    using namespace std;
+```
+以外の使い方を知らなかったので調べた。以下が参考。  
+> - [c++ using使い方の名称まとめ](https://qiita.com/luftfararen/items/8f9fb52d43f0c76ca932)  
+
+このページによるとエイリアスの作成というのができるそうだ。感覚的にはtypedefと似ているだろうか？
+
+### std::nullopt
+　初めて見た。以下に参考。
+> - [https://cpprefjp.github.io/reference/optional/nullopt_t.html](https://cpprefjp.github.io/reference/optional/nullopt_t.html)  
+> - [C++17 の std::optional に無効値を設定する](https://secret-garden.hatenablog.com/entry/2017/06/22/161953)  
+
+クラスの実装に関して有効な値でないことを示すという認識だが正しいだろうか？
+
+### array\[i\].first ? array\[i\].second ?
+
+### \_\_attribute\_\_((packed)); ?
+以下参考。
+> - [4.11 \_\_packed\_\_ 属性](https://docs.oracle.com/cd/E19205-01/821-0388/giqdb/index.html)  
+
+構造体または共用体にかんするメモリに関する挙動を制御する。メモリサイズを最小にするように制御する。
+
+### uint8_t :3 これはなんだ？
+ビットフィールドというやつ。名前を聞いて思い出した。参考は以下のURLと独習C。  
+> - [https://so-zou.jp/software/tech/programming/cpp/grammar/struct/](https://so-zou.jp/software/tech/programming/cpp/grammar/struct/)  
+
+指定した数のビット数だけ確保するという指定。予想だが、ハードウェア側から送られるデータを正しく認識するために構造体の先頭からのビット数を調整しているのではないかと勝手に考えている。
+
+### array\<type , size\>
+　一応メモ。  
+> - [array クラス (C++ 標準ライブラリ)](https://docs.microsoft.com/ja-jp/cpp/standard-library/array-class-stl?view=msvc-170)  
+
+配列の宣言の時の書き方。厳密には配列というよりはコンテナだと思うが。一応以下にメモ。  
+> - [C++ コンテナ クラス入門](http://vivi.dyndns.org/tech/cpp/container.html)  
+
+### alignas ?
+初めて見た。以下によると、align as　ということらしい。
+> - [https://cpprefjp.github.io/lang/cpp11/alignas.html](https://cpprefjp.github.io/lang/cpp11/alignas.html)
+
+なお、アライメントは一列に並べるや調整といった意味があるみたい。

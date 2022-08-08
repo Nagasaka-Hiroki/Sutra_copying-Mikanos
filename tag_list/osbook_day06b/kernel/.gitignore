@@ -3,4 +3,3 @@ kernel.elf
 hankaku.bin
 *.o
 .*.d
-*.swp

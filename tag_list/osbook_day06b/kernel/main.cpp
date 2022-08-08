@@ -15,6 +15,40 @@
 const PixelColor kDesktopBGColor{  45, 118, 237};
 const PixelColor kDesktopFGColor{ 255, 255, 255};
 
+//マウスカーソル
+const int kMouseCursorWidth=15;
+const int kMouseCursorHeight=24;
+//kMouseCursorWidthは文字数を表す。
+//kMouseCursorHeightは文字変数の数。
+const char mouse_cursor_shape[kMouseCursorHeight][kMouseCursorWidth+1]={
+/*行数と列数をコメントで表示する。*/
+/* 行数  \    列数    123456789abcdef    */
+/*   1   */         "@              ",
+/*   2   */         "@@             ",
+/*   3   */         "@.@            ",
+/*   4   */         "@..@           ",
+/*   5   */         "@...@          ",
+/*   6   */         "@....@         ",
+/*   7   */         "@.....@        ",
+/*   8   */         "@......@       ",
+/*   9   */         "@.......@      ",
+/*  10   */         "@........@     ",
+/*  11   */         "@.........@    ",
+/*  12   */         "@..........@   ",
+/*  13   */         "@...........@  ",
+/*  14   */         "@............@ ",
+/*  15   */         "@......@@@@@@@@",
+/*  16   */         "@......@       ",
+/*  17   */         "@....@@.@      ",
+/*  18   */         "@...@ @.@      ",
+/*  19   */         "@..@   @.@     ",
+/*  20   */         "@.@    @.@     ",
+/*  21   */         "@@      @.@    ",
+/*  22   */         "@       @.@    ",
+/*  23   */         "         @.@   ",
+/*  24   */         "         @@@   ",
+};
+
 void operator delete(void* obj) noexcept{
 }
 
